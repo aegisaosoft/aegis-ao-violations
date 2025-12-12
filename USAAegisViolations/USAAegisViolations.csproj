@@ -1,0 +1,28 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Huur\huur-api\HuurApi\HuurApi.csproj" />
+    <ProjectReference Include="..\AegisViolationsAPI\AegisViolationsAPI.csproj" />
+  </ItemGroup>
+
+  <Target Name="CopyToLoaders" AfterTargets="Build">
+      <Copy SourceFiles="$(TargetDir)$(TargetFileName)" DestinationFolder="..\AegisViolationsAPILoader\Loaders\" SkipUnchangedFiles="true" />
+      <Copy SourceFiles="$(TargetDir)$(TargetFileName)" DestinationFolder="..\AegisFinderTest\Loaders\" SkipUnchangedFiles="true" />
+      <Copy SourceFiles="$(TargetDir)$(TargetFileName)" DestinationFolder="..\AegisViolationsService\Loaders\" SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="CopyToAegisViolationsFinders" AfterTargets="Build">
+    <PropertyGroup>
+      <FindersDir>$(MSBuildProjectDirectory)\..\AegisViolations\Finders\</FindersDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(FindersDir)" />
+    <Copy SourceFiles="$(TargetDir)$(TargetFileName)" DestinationFolder="$(FindersDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

@@ -1,0 +1,47 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AegisViolationsAPI\AegisViolationsAPI.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.0" />
+  </ItemGroup>
+
+  <Target Name="CopyApiOutputsToLoader" AfterTargets="Build">
+    <PropertyGroup>
+      <LoaderDir>$(MSBuildProjectDirectory)\..\AegisViolationsAPILoader\bin\$(Configuration)\$(TargetFramework)\Loaders\</LoaderDir>
+      <LoaderOutputDir>$(MSBuildProjectDirectory)\..\AegisViolationsAPILoader\bin\$(Configuration)\$(TargetFramework)\</LoaderOutputDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <ApiCopyFiles Include="$(TargetDir)AegisBroward.dll" />
+      <ApiCopyFiles Include="$(TargetDir)AegisViolationsAPI.dll" />
+    </ItemGroup>
+    <ItemGroup>
+      <ConfigCopyFiles Include="$(MSBuildProjectDirectory)\appsettings.json" />
+    </ItemGroup>
+    <MakeDir Directories="$(LoaderDir)" />
+    <Copy SourceFiles="@(ApiCopyFiles)" DestinationFolder="$(LoaderDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(ConfigCopyFiles)" DestinationFolder="$(LoaderOutputDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="CopyToAegisViolationsFinders" AfterTargets="Build">
+    <PropertyGroup>
+      <FindersDir>$(MSBuildProjectDirectory)\..\AegisViolations\Finders\</FindersDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(FindersDir)" />
+    <Copy SourceFiles="$(TargetDir)$(TargetFileName)" DestinationFolder="$(FindersDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>
