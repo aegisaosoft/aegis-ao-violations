@@ -1,7 +1,84 @@
+using Microsoft.EntityFrameworkCore;
+using HuurApi.Services;
+using HuurApi.Models;
+
+// Enable legacy timestamp behavior for Npgsql to handle DateTimes
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllers();
+
+// Add HuurApi services
+builder.Services.AddHuurApi(options =>
+{
+    var huurApiConfig = builder.Configuration.GetSection("HuurApi");
+    options.BaseUrl = huurApiConfig["BaseUrl"] ?? "https://agsm-huur-production-api.azurewebsites.net";
+    options.DocumentationUrl = huurApiConfig["DocumentationUrl"] ?? "https://agsm-huur-production-api.azurewebsites.net/swagger/index.html";
+    options.TimeoutSeconds = huurApiConfig.GetValue<int>("TimeoutSeconds", 30);
+    options.MaxRetries = huurApiConfig.GetValue<int>("MaxRetries", 3);
+    options.RetryDelayMs = huurApiConfig.GetValue<int>("RetryDelayMs", 1000);
+    options.PersistTokens = huurApiConfig.GetValue<bool>("PersistTokens", true);
+    options.TokenConfigPath = huurApiConfig["TokenConfigPath"] ?? "huur-api-config.json";
+    options.ApiKey = huurApiConfig["ApiKey"]; // Optional API key
+});
+
+// Add Database Configuration Service
+builder.Services.AddScoped<AegisViolations.Services.IDatabaseConfigService, AegisViolations.Services.DatabaseConfigService>();
+
+// Add Memory Cache for token caching
+builder.Services.AddMemoryCache();
+
+// Add Huur API Authentication Service
+builder.Services.AddScoped<AegisViolations.Services.IHuurApiAuthService, AegisViolations.Services.HuurApiAuthService>();
+
+// Add Entity Framework with configuration
+builder.Services.AddDbContext<AegisViolations.Data.ViolationsDbContext>((serviceProvider, options) =>
+{
+    try
+    {
+        var dbConfigService = serviceProvider.GetRequiredService<AegisViolations.Services.IDatabaseConfigService>();
+        var connectionString = dbConfigService.GetConnectionString();
+        var dbSettings = dbConfigService.GetDatabaseSettings();
+
+        var logger = serviceProvider.GetRequiredService<ILogger<AegisViolations.Data.ViolationsDbContext>>();
+        logger.LogInformation("[Database] Configuring ViolationsDbContext...");
+
+        options.UseNpgsql(connectionString, npgsqlOptions =>
+        {
+            npgsqlOptions.CommandTimeout(dbSettings.CommandTimeout);
+            npgsqlOptions.EnableRetryOnFailure(
+                maxRetryCount: dbSettings.MaxRetryCount,
+                maxRetryDelay: TimeSpan.Parse(dbSettings.MaxRetryDelay),
+                errorCodesToAdd: null);
+        });
+
+        if (dbSettings.EnableSensitiveDataLogging)
+        {
+            options.EnableSensitiveDataLogging();
+        }
+
+        if (dbSettings.EnableDetailedErrors)
+        {
+            options.EnableDetailedErrors();
+        }
+
+        if (dbSettings.EnableServiceProviderCaching)
+        {
+            options.EnableServiceProviderCaching();
+        }
+
+        logger.LogInformation("[Database] ViolationsDbContext configured successfully. CommandTimeout: {Timeout}s, RetryOnFailure: {RetryEnabled}, MaxRetryCount: {MaxRetry}",
+            dbSettings.CommandTimeout, dbSettings.EnableRetryOnFailure, dbSettings.MaxRetryCount);
+    }
+    catch (Exception ex)
+    {
+        var logger = serviceProvider.GetRequiredService<ILogger<AegisViolations.Data.ViolationsDbContext>>();
+        logger.LogCritical(ex, "Failed to configure ViolationsDbContext");
+        throw;
+    }
+});
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
