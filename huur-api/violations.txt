@@ -1,0 +1,60 @@
+GET
+/Violations/get-parking-violations/{dateFrom}​/{dateTo}
+
+(Auth)
+PUT
+/Violations/set-parking-violations
+ParlingViolation.json
+
+
+public class ParkingViolation
+{
+    /// <summary>
+    /// Notice Number
+    /// </summary>
+    [JsonProperty("NoticeNumber")]
+    public string NoticeNumber { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Agency
+    /// </summary>
+    [JsonProperty("Agency")]
+    public string Agency { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Licence Plate
+    /// </summary>
+    [JsonProperty("Tag")]
+    public string Tag { get; set; } = string.Empty;
+
+    /// <summary>
+    /// State
+    /// </summary>
+    [JsonProperty("State")]
+    public string State { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Fine Type
+    /// </summary>
+    [JsonProperty("fine_type")]
+    public int? FineType { get; set; } = 0;
+
+    /// <summary>
+    /// Amount
+    /// </summary>
+    [JsonProperty("Amount")]
+    public decimal Amount { get; set; } = decimal.Zero;
+
+    /// <summary>
+    /// Date
+    /// </summary>
+    [JsonProperty("Date")]
+    public DateTime Date { get; set; } = DateTime.Now;
+
+    /// <summary>
+    /// Address
+    /// </summary>
+    [JsonProperty("Address")]
+    public string Address { get; set; } = string.Empty;
+
+}
