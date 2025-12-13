@@ -27,7 +27,7 @@ namespace USAAegisViolations.Finders
         protected string _violationUrl = "https://rmcpay.com/rmcapi/api/violation_index.php/searchviolation?";
         public string Name => "RmcPay";
         public string State => "USA";
-        public string Link => _violationUrl;
+        public string Link => "https://rmcpay.com/";
         
         public event EventHandler<FinderErrorEventArgs>? Error;
 

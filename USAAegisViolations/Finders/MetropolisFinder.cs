@@ -26,7 +26,7 @@ namespace USAAegisViolations.Finders
 
         public string Name => "Metropolis";
         public string State => "USA";
-        public string Link => _url;
+        public string Link => "https://payments.metropolis.io/";
         
         public event EventHandler<FinderErrorEventArgs>? Error;
 

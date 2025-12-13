@@ -26,7 +26,7 @@ namespace USAAegisViolations.Finders
 
         public string Name => "VanGuard";
         public string State => "USA";
-        public string Link => _url;
+        public string Link => "https://www.payparkingnotice.com/";
         
         public event EventHandler<FinderErrorEventArgs>? Error;
 
