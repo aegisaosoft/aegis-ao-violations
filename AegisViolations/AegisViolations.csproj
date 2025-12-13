@@ -18,32 +18,29 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="9.0.0" />
   </ItemGroup>
 
-  <Target Name="CopyFindersToOutput" AfterTargets="Build">
-    <PropertyGroup>
-      <FindersSourceDir>$(MSBuildProjectDirectory)\Finders\</FindersSourceDir>
-      <FindersOutputDir>$(TargetDir)Finders\</FindersOutputDir>
-    </PropertyGroup>
-    <ItemGroup>
-      <FinderFiles Include="$(FindersSourceDir)*.dll" />
-    </ItemGroup>
-    <MakeDir Directories="$(FindersOutputDir)" />
-    <Copy SourceFiles="@(FinderFiles)" DestinationFolder="$(FindersOutputDir)" SkipUnchangedFiles="true" />
-  </Target>
+  <!-- Finder DLLs - copied to both Build and Publish output -->
+  <ItemGroup>
+    <Content Include="Finders\*.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <Link>Finders\%(Filename)%(Extension)</Link>
+    </Content>
+  </ItemGroup>
 
-  <Target Name="CopyAppSettingsFromFinders" AfterTargets="Build">
-    <PropertyGroup>
-      <OutputAppSettingsDir>$(TargetDir)</OutputAppSettingsDir>
-    </PropertyGroup>
-    <!-- Copy appsettings.json from AegisBroward.API if it exists -->
-    <Copy SourceFiles="$(MSBuildProjectDirectory)\..\AegisBroward.API\appsettings.json" 
-          DestinationFiles="$(OutputAppSettingsDir)appsettings.AegisBroward.json" 
-          SkipUnchangedFiles="true" 
-          Condition="Exists('$(MSBuildProjectDirectory)\..\AegisBroward.API\appsettings.json')" />
-    <!-- Copy appsettings.json from FLAegisViolations if it exists -->
-    <Copy SourceFiles="$(MSBuildProjectDirectory)\..\FLAegisViolations\appsettings.json" 
-          DestinationFiles="$(OutputAppSettingsDir)appsettings.FLAegisViolations.json" 
-          SkipUnchangedFiles="true" 
-          Condition="Exists('$(MSBuildProjectDirectory)\..\FLAegisViolations\appsettings.json')" />
-  </Target>
+  <!-- AppSettings from other projects -->
+  <ItemGroup>
+    <Content Include="..\AegisBroward.API\appsettings.json" 
+             Condition="Exists('..\AegisBroward.API\appsettings.json')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <Link>appsettings.AegisBroward.json</Link>
+    </Content>
+    <Content Include="..\FLAegisViolations\appsettings.json" 
+             Condition="Exists('..\FLAegisViolations\appsettings.json')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <Link>appsettings.FLAegisViolations.json</Link>
+    </Content>
+  </ItemGroup>
 
 </Project>
