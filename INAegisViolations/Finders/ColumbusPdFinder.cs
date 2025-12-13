@@ -24,7 +24,7 @@ namespace INAegisViolations.Finders
     {
         protected static string _url = "https://columbuspd.t2hosted.com";
         protected PortalHelper helper = new PortalHelper(_url, "Columbus");
-        public string Name => "Columbus";
+        public string Name => "Columbus PD";
         public string State => "IN";
         public string Link => "https://columbuspd.t2hosted.com";
 

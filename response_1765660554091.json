@@ -1,0 +1,170 @@
+[
+  {
+    "className": "ModestoFinder",
+    "name": "Modesto",
+    "link": "https://modesto.t2hosted.com",
+    "state": "CA"
+  },
+  {
+    "className": "AuroraFinder",
+    "name": "Aurora",
+    "link": "https://aurora.t2hosted.com",
+    "state": "CO"
+  },
+  {
+    "className": "FcgovFinder",
+    "name": "Fort Collins",
+    "link": "https://fcgov.t2hosted.com",
+    "state": "CO"
+  },
+  {
+    "className": "RehobothBeachFinder",
+    "name": "Rehoboth Beach",
+    "link": "https://rehobothbeach.t2hosted.com",
+    "state": "DE"
+  },
+  {
+    "className": "BlinkayFinder",
+    "name": "Blinkay",
+    "link": "https://webapp-usa.blinkay.app",
+    "state": "FL"
+  },
+  {
+    "className": "BrowardFinder",
+    "name": "Broward Clerk",
+    "link": "https://api.browardclerk.org",
+    "state": "FL"
+  },
+  {
+    "className": "CityOfFortLauderdaleFinder",
+    "name": "City of Fort Lauderdale",
+    "link": "https://fortlauderdaleparking.t2hosted.com",
+    "state": "FL"
+  },
+  {
+    "className": "ParkingComplianceFinder",
+    "name": "Parking Compliance",
+    "link": "https://api.cpmdashboard.com/v1/violationapp/violations/",
+    "state": "FL"
+  },
+  {
+    "className": "TampaFinder",
+    "name": "Tampa",
+    "link": "https://tampaparking.t2hosted.com",
+    "state": "FL"
+  },
+  {
+    "className": "UniversityOfSouthFloridaFinder",
+    "name": "University of South Florida",
+    "link": "https://usfpts.t2hosted.com",
+    "state": "FL"
+  },
+  {
+    "className": "WestPalmBeachFinder",
+    "name": "West Palm Beach",
+    "link": "https://wpb.citationportal.com",
+    "state": "FL"
+  },
+  {
+    "className": "CityOfSavannaFinder",
+    "name": "Savanna City",
+    "link": "https://cityofsavannah.t2hosted.com",
+    "state": "GE"
+  },
+  {
+    "className": "BloomingtonFinder",
+    "name": "Bloomington",
+    "link": "https://bloomington.t2hosted.com",
+    "state": "IN"
+  },
+  {
+    "className": "ColumbusPdFinder",
+    "name": "Columbus",
+    "link": "https://columbuspd.t2hosted.com",
+    "state": "IN"
+  },
+  {
+    "className": "FortWayneViolationsFinder",
+    "name": "Fort Wayne",
+    "link": "https://fortwayneviolations.t2hosted.com",
+    "state": "IN"
+  },
+  {
+    "className": "LouisvilleMetroFinder",
+    "name": "Louisville",
+    "link": "https://louisvillemetro.t2hosted.com",
+    "state": "KY"
+  },
+  {
+    "className": "NYCFinder",
+    "name": "NYC",
+    "link": "https://data.cityofnewyork.us/City-Government/Open-Parking-and-Camera-Violations/nc67-uf89",
+    "state": "NY"
+  },
+  {
+    "className": "ViolationsParkingFinder",
+    "name": "Columbus",
+    "link": "https://violationsparking.t2hosted.com",
+    "state": "OH"
+  },
+  {
+    "className": "LancasterFinder",
+    "name": "Lancaster",
+    "link": "https://lancaster.t2hosted.com",
+    "state": "PA"
+  },
+  {
+    "className": "StateCollegeFinder",
+    "name": "State College",
+    "link": "https://statecollege.t2hosted.com",
+    "state": "PA"
+  },
+  {
+    "className": "ColumbiaScFinder",
+    "name": "Columbia",
+    "link": "https://columbiasc.t2hosted.com",
+    "state": "SC"
+  },
+  {
+    "className": "CityOfHoustonFinder",
+    "name": "City of Houston",
+    "link": "https://houstonparking.t2hosted.com",
+    "state": "TX"
+  },
+  {
+    "className": "MetropolisFinder",
+    "name": "Metropolis",
+    "link": "https://payments.metropolis.io/",
+    "state": "USA"
+  },
+  {
+    "className": "RmcPayFinder",
+    "name": "RmcPay",
+    "link": "https://rmcpay.com/",
+    "state": "USA"
+  },
+  {
+    "className": "VanGuardFinder",
+    "name": "VanGuard",
+    "link": "https://www.payparkingnotice.com/",
+    "state": "USA"
+  },
+  {
+    "className": "LoudounFinder",
+    "name": "Loudoun County",
+    "link": "https://loudoun.t2hosted.com",
+    "state": "VA"
+  },
+  {
+    "className": "CityOfVancouverFinder",
+    "name": "Vancouver",
+    "link": "https://cityofvancouver.t2hosted.com",
+    "state": "WA"
+  },
+  {
+    "className": "LacrosseFinder",
+    "name": "La Crosse",
+    "link": "https://lacrosse.t2hosted.com",
+    "state": "WI"
+  }
+]
