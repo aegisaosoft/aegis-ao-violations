@@ -72,7 +72,7 @@ namespace USAAegisViolations.Finders
                                 PaymentStatus = Const.P_NEW,
                                 FineType = Const.FT_PARKING, // Parking violation
                                 IsActive = true,
-                                Link = _url
+                                Link = this.Link
                             };
 
                             parkingViolations.Add(parkingViolation);

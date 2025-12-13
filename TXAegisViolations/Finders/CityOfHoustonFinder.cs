@@ -25,7 +25,7 @@ namespace TXAegisViolations.Finders
         protected PortalHelper helper = new PortalHelper(_url, "City of Houston");
         public string Name => "City of Houston";
         public string State => "TX";
-        public string Link => _url;
+        public string Link => "https://houstonparking.t2hosted.com";
         
         public event EventHandler<FinderErrorEventArgs>? Error;
 
@@ -38,7 +38,7 @@ namespace TXAegisViolations.Finders
                 // Set Link property for all violations
                 foreach (var violation in violations)
                 {
-                    violation.Link = _url;
+                    violation.Link = this.Link;
                 }
                 
                 return violations;

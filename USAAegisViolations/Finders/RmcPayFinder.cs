@@ -76,7 +76,7 @@ namespace USAAegisViolations.Finders
                                 PaymentStatus = Helper.GetStaus(status),
                                 FineType = Const.FT_PARKING, // Parking violation
                                 IsActive = violation.Status.ToLower() != "paid" && violation.Paid != "1",
-                                Link = "https://www.rmcpay.com"
+                                Link = this.Link
                             };
                             parkingViolations.Add(parkingViolation);
                         }

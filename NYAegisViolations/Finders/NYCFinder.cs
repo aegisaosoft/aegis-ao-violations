@@ -228,18 +228,18 @@ namespace NYAegisViolations.Finders
         private static int DeterminePaymentStatus(decimal amountDue, string? violationStatus)
         {
             if (amountDue == 0)
-                return 1; // Paid
+                return Const.P_PAID; // Paid
             
             if (!string.IsNullOrEmpty(violationStatus))
             {
                 var status = violationStatus.ToUpperInvariant();
                 if (status.Contains("PAID"))
-                    return 1; // Paid
+                    return Const.P_PAID; // Paid
                 if (status.Contains("HEARING") || status.Contains("DISPUTE"))
-                    return 2; // Disputed
+                    return Const.P_DISPUTED; // Disputed
             }
             
-            return 0; // Unpaid
+            return Const.P_NEW; // Unpaid
         }
 
         private static string BuildNote(NycViolationResponse violation)

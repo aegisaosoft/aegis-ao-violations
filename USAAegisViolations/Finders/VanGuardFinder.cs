@@ -71,7 +71,7 @@ namespace USAAegisViolations.Finders
                                 PaymentStatus = violation.TicketStatus.ToLower() != "paid" ? Const.P_NEW : Const.P_PAID,
                                 FineType = Const.FT_PARKING, // Parking violation
                                 IsActive = violation.TicketStatus.ToLower() != "paid",
-                                Link = _url
+                                Link = this.Link
                             };
                             parkingViolations.Add(parkingViolation);
                         }
