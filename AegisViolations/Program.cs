@@ -33,6 +33,9 @@ builder.Services.AddMemoryCache();
 // Add Huur API Authentication Service
 builder.Services.AddScoped<AegisViolations.Services.IHuurApiAuthService, AegisViolations.Services.HuurApiAuthService>();
 
+// Add Progress Tracking Service (Singleton for in-memory storage)
+builder.Services.AddSingleton<AegisViolations.Services.IProgressTrackingService, AegisViolations.Services.ProgressTrackingService>();
+
 // Add Entity Framework with configuration
 builder.Services.AddDbContext<AegisViolations.Data.ViolationsDbContext>((serviceProvider, options) =>
 {

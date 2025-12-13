@@ -8,6 +8,7 @@ using AegisViolations.Models;
 using AegisViolations.DTOs;
 using Microsoft.EntityFrameworkCore;
 using System.Data.Common;
+using AegisViolations.Services;
 
 namespace AegisViolations.Controllers;
 
@@ -17,11 +18,29 @@ public class ViolationsController : ControllerBase
 {
     private readonly ILogger<ViolationsController> _logger;
     private readonly ViolationsDbContext _context;
+    private readonly IProgressTrackingService _progressTracking;
 
-    public ViolationsController(ILogger<ViolationsController> logger, ViolationsDbContext context)
+    public ViolationsController(ILogger<ViolationsController> logger, ViolationsDbContext context, IProgressTrackingService progressTracking)
     {
         _logger = logger;
         _context = context;
+        _progressTracking = progressTracking;
+    }
+
+    /// <summary>
+    /// Get progress status for a violation search request
+    /// GET /api/Violations/progress/{requestId}
+    /// </summary>
+    [HttpGet("progress/{requestId}")]
+    public IActionResult GetProgress([FromRoute] string requestId)
+    {
+        var progress = _progressTracking.GetProgress(requestId);
+        if (progress == null)
+        {
+            return NotFound(new { error = "Progress tracker not found for the given request ID" });
+        }
+
+        return Ok(progress);
     }
 
     /// <summary>
@@ -111,16 +130,23 @@ public class ViolationsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> GetViolations([FromBody] ViolationsRequest request)
     {
+        // Create progress tracker
+        var requestId = _progressTracking.CreateProgressTracker();
+
         try
         {
+            _progressTracking.UpdateProgress(requestId, 0, "Validating request");
+
             if (request == null)
             {
-                return BadRequest(new { error = "Request body is required" });
+                _progressTracking.UpdateProgress(requestId, 0, "Error: Request body is required");
+                return BadRequest(new { error = "Request body is required", requestId });
             }
 
             if (request.Cars == null || request.Cars.Count == 0)
             {
-                return BadRequest(new { error = "At least one car is required" });
+                _progressTracking.UpdateProgress(requestId, 0, "Error: At least one car is required");
+                return BadRequest(new { error = "At least one car is required", requestId });
             }
 
             // Combine states from request
@@ -138,10 +164,13 @@ public class ViolationsController : ControllerBase
 
             if (statesToSearch.Count == 0)
             {
-                return BadRequest(new { error = "At least one state must be specified" });
+                _progressTracking.UpdateProgress(requestId, 0, "Error: At least one state must be specified");
+                return BadRequest(new { error = "At least one state must be specified", requestId });
             }
 
             _logger.LogInformation($"Searching violations for {request.Cars.Count} cars in states: {string.Join(", ", statesToSearch)}");
+
+            _progressTracking.UpdateProgress(requestId, 5, "Loading finders");
 
             // Load all finders
             var allFinders = LoadFindersFromDlls();
@@ -162,12 +191,16 @@ public class ViolationsController : ControllerBase
 
             _logger.LogInformation($"Found {relevantFinders.Count} relevant finders for states: {string.Join(", ", statesToSearch)}");
 
+            _progressTracking.UpdateProgress(requestId, 10, "Starting violation search");
+
             // Use thread-safe collection for violations
             var allViolations = new ConcurrentBag<ParkingViolation>();
+            var validCars = request.Cars.Where(car => !string.IsNullOrWhiteSpace(car.LicensePlate)).ToList();
+            var totalCars = validCars.Count;
+            var processedCars = 0;
 
             // Process all cars in parallel
-            var carTasks = request.Cars
-                .Where(car => !string.IsNullOrWhiteSpace(car.LicensePlate))
+            var carTasks = validCars
                 .Select(async car =>
                 {
                     // Use the states list from request for all cars
@@ -201,6 +234,11 @@ public class ViolationsController : ControllerBase
                     });
 
                     await Task.WhenAll(finderTasks);
+
+                    // Update progress after each car is processed (10% to 90%)
+                    var newProcessed = Interlocked.Increment(ref processedCars);
+                    var progress = 10 + (int)((double)newProcessed / totalCars * 80);
+                    _progressTracking.UpdateProgress(requestId, progress, $"Processed {newProcessed}/{totalCars} vehicles");
                 });
 
             // Wait for all cars to be processed
@@ -208,6 +246,8 @@ public class ViolationsController : ControllerBase
 
             var violationsList = allViolations.ToList();
             _logger.LogInformation($"Total violations found: {violationsList.Count}");
+
+            _progressTracking.UpdateProgress(requestId, 95, "Saving request record");
 
             // Track request in violations_requests table
             try
@@ -232,16 +272,20 @@ public class ViolationsController : ControllerBase
                 // Don't fail the request if tracking fails
             }
 
+            _progressTracking.UpdateProgress(requestId, 100, "Completed");
+
             return Ok(new ViolationsResponse
             {
                 Violations = violationsList,
-                TotalCount = violationsList.Count
+                TotalCount = violationsList.Count,
+                RequestId = requestId
             });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting violations");
-            return StatusCode(500, new { error = ex.Message });
+            _progressTracking.UpdateProgress(requestId, 0, $"Error: {ex.Message}");
+            return StatusCode(500, new { error = ex.Message, requestId });
         }
     }
 
@@ -388,27 +432,36 @@ public class ViolationsController : ControllerBase
         [FromRoute] Guid companyId,
         [FromBody] CompanyViolationsRequest request)
     {
+        // Create progress tracker
+        var requestId = _progressTracking.CreateProgressTracker();
+
         try
         {
+            _progressTracking.UpdateProgress(requestId, 0, "Validating request");
+
             if (request == null)
             {
-                return BadRequest(new { error = "Request body is required" });
+                _progressTracking.UpdateProgress(requestId, 0, "Error: Request body is required");
+                return BadRequest(new { error = "Request body is required", requestId });
             }
 
             // Validate date format
             if (!DateTime.TryParseExact(request.StartDate, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out var startDate))
             {
-                return BadRequest(new { error = "Invalid StartDate format. Expected YYYY-MM-DD" });
+                _progressTracking.UpdateProgress(requestId, 0, "Error: Invalid StartDate format");
+                return BadRequest(new { error = "Invalid StartDate format. Expected YYYY-MM-DD", requestId });
             }
 
             if (!DateTime.TryParseExact(request.EndDate, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out var endDate))
             {
-                return BadRequest(new { error = "Invalid EndDate format. Expected YYYY-MM-DD" });
+                _progressTracking.UpdateProgress(requestId, 0, "Error: Invalid EndDate format");
+                return BadRequest(new { error = "Invalid EndDate format. Expected YYYY-MM-DD", requestId });
             }
 
             if (startDate > endDate)
             {
-                return BadRequest(new { error = "StartDate must be before or equal to EndDate" });
+                _progressTracking.UpdateProgress(requestId, 0, "Error: StartDate must be before or equal to EndDate");
+                return BadRequest(new { error = "StartDate must be before or equal to EndDate", requestId });
             }
 
             // Prepare states to search
@@ -426,10 +479,13 @@ public class ViolationsController : ControllerBase
             
             if (statesToSearch.Count == 0)
             {
-                return BadRequest(new { error = "At least one state must be specified" });
+                _progressTracking.UpdateProgress(requestId, 0, "Error: At least one state must be specified");
+                return BadRequest(new { error = "At least one state must be specified", requestId });
             }
 
             _logger.LogInformation($"Searching violations for company {companyId} from {startDate:yyyy-MM-dd} to {endDate:yyyy-MM-dd} in states: {string.Join(", ", statesToSearch)}");
+
+            _progressTracking.UpdateProgress(requestId, 5, "Loading vehicles from database");
 
             // Get all vehicles for the company from the database using raw SQL
             var vehicles = new List<Vehicle>();
@@ -463,6 +519,7 @@ public class ViolationsController : ControllerBase
             if (vehicles.Count == 0)
             {
                 _logger.LogWarning($"No vehicles found for company {companyId}");
+                _progressTracking.UpdateProgress(requestId, 100, "Completed: No vehicles found");
                 return Ok(new CompanyViolationsResponse
                 {
                     CompanyId = companyId,
@@ -470,11 +527,14 @@ public class ViolationsController : ControllerBase
                     ViolationsFound = 0,
                     ViolationsSaved = 0,
                     ViolationsUpdated = 0,
-                    Message = "No vehicles found for this company"
+                    Message = "No vehicles found for this company",
+                    RequestId = requestId
                 });
             }
 
             _logger.LogInformation($"Found {vehicles.Count} vehicles for company {companyId}");
+
+            _progressTracking.UpdateProgress(requestId, 10, "Loading finders");
 
             // Load all finders
             var allFinders = LoadFindersFromDlls();
@@ -495,14 +555,19 @@ public class ViolationsController : ControllerBase
 
             _logger.LogInformation($"Found {relevantFinders.Count} relevant finders for states: {string.Join(", ", statesToSearch)}");
 
+            _progressTracking.UpdateProgress(requestId, 15, "Starting violation search");
+
             // Use thread-safe collections
             var allViolations = new ConcurrentBag<ParkingViolation>();
             var savedCount = 0;
             var updatedCount = 0;
 
+            var validVehicles = vehicles.Where(v => !string.IsNullOrWhiteSpace(v.LicensePlate)).ToList();
+            var totalVehicles = validVehicles.Count;
+            var processedVehicles = 0;
+
             // Process all vehicles in parallel
-            var vehicleTasks = vehicles
-                .Where(v => !string.IsNullOrWhiteSpace(v.LicensePlate))
+            var vehicleTasks = validVehicles
                 .Select(async vehicle =>
                 {
                     var vehicleState = string.IsNullOrWhiteSpace(vehicle.State) ? string.Empty : vehicle.State.Trim().ToUpperInvariant();
@@ -567,6 +632,11 @@ public class ViolationsController : ControllerBase
                     });
 
                     await Task.WhenAll(finderTasks);
+
+                    // Update progress after each vehicle is processed (15% to 70%)
+                    var newProcessed = Interlocked.Increment(ref processedVehicles);
+                    var progress = 15 + (int)((double)newProcessed / totalVehicles * 55);
+                    _progressTracking.UpdateProgress(requestId, progress, $"Processed {newProcessed}/{totalVehicles} vehicles");
                 });
 
             // Wait for all vehicles to be processed
@@ -574,6 +644,11 @@ public class ViolationsController : ControllerBase
 
             var violationsList = allViolations.ToList();
             _logger.LogInformation($"Total violations found: {violationsList.Count}");
+
+            _progressTracking.UpdateProgress(requestId, 75, $"Saving {violationsList.Count} violations to database");
+
+            var totalViolations = violationsList.Count;
+            var savedViolations = 0;
 
             // Save or update violations in the database
             foreach (var violation in violationsList)
@@ -651,6 +726,14 @@ public class ViolationsController : ControllerBase
                         _context.Violations.Add(violationEntity);
                         Interlocked.Increment(ref savedCount);
                     }
+
+                    // Update progress for saving violations (75% to 90%)
+                    var newSaved = Interlocked.Increment(ref savedViolations);
+                    if (totalViolations > 0)
+                    {
+                        var progress = 75 + (int)((double)newSaved / totalViolations * 15);
+                        _progressTracking.UpdateProgress(requestId, progress, $"Saved {newSaved}/{totalViolations} violations");
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -662,6 +745,8 @@ public class ViolationsController : ControllerBase
             await _context.SaveChangesAsync();
 
             _logger.LogInformation($"Saved {savedCount} new violations and updated {updatedCount} existing violations for company {companyId}");
+
+            _progressTracking.UpdateProgress(requestId, 95, "Saving request record");
 
             // Track request in violations_requests table
             try
@@ -687,6 +772,8 @@ public class ViolationsController : ControllerBase
                 // Don't fail the request if tracking fails
             }
 
+            _progressTracking.UpdateProgress(requestId, 100, "Completed");
+
             return Ok(new CompanyViolationsResponse
             {
                 CompanyId = companyId,
@@ -694,13 +781,15 @@ public class ViolationsController : ControllerBase
                 ViolationsFound = violationsList.Count,
                 ViolationsSaved = savedCount,
                 ViolationsUpdated = updatedCount,
-                Message = $"Successfully processed {vehicles.Count} vehicles. Found {violationsList.Count} violations, saved {savedCount} new, updated {updatedCount} existing."
+                Message = $"Successfully processed {vehicles.Count} vehicles. Found {violationsList.Count} violations, saved {savedCount} new, updated {updatedCount} existing.",
+                RequestId = requestId
             });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, $"Error getting and saving violations for company {companyId}");
-            return StatusCode(500, new { error = ex.Message });
+            _progressTracking.UpdateProgress(requestId, 0, $"Error: {ex.Message}");
+            return StatusCode(500, new { error = ex.Message, requestId });
         }
     }
 }
@@ -721,6 +810,7 @@ public class ViolationsResponse
 {
     public List<ParkingViolation> Violations { get; set; } = new();
     public int TotalCount { get; set; }
+    public string? RequestId { get; set; }
 }
 
 public class CompanyViolationsResponse
@@ -731,5 +821,6 @@ public class CompanyViolationsResponse
     public int ViolationsSaved { get; set; }
     public int ViolationsUpdated { get; set; }
     public string Message { get; set; } = string.Empty;
+    public string? RequestId { get; set; }
 }
 
