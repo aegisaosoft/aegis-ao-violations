@@ -1439,9 +1439,36 @@ public class HuurApiClient : IHuurApiClient
             httpRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", bearerToken);
 
             var response = await tempHttpClient.SendAsync(httpRequest, cancellationToken);
-            response.EnsureSuccessStatusCode();
-
+            
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogError("HTTP error getting external vehicles. Status: {StatusCode}, Response: {Response}", 
+                    response.StatusCode, responseContent);
+                
+                // Try to deserialize error response
+                try
+                {
+                    var errorResponse = JsonConvert.DeserializeObject<GetExternalVehiclesResponse>(responseContent);
+                    if (errorResponse != null)
+                    {
+                        return errorResponse;
+                    }
+                }
+                catch
+                {
+                    // If deserialization fails, return error response with raw content
+                }
+                
+                return new GetExternalVehiclesResponse
+                {
+                    Reason = (int)response.StatusCode,
+                    Message = $"HTTP {(int)response.StatusCode}: {response.ReasonPhrase}. Response: {responseContent}",
+                    Result = new List<ExternalVehicle>()
+                };
+            }
+
             var externalVehiclesResponse = JsonConvert.DeserializeObject<GetExternalVehiclesResponse>(responseContent);
 
             return externalVehiclesResponse ?? new GetExternalVehiclesResponse

@@ -24,6 +24,90 @@ public class ViolationsController : ControllerBase
         _context = context;
     }
 
+    /// <summary>
+    /// Get violations for a company within a date range
+    /// GET /api/Violations?companyId={uuid}&dateFrom={YYYY-MM-DD}&dateTo={YYYY-MM-DD}
+    /// </summary>
+    [HttpGet]
+    public async Task<IActionResult> GetViolationsByCompany(
+        [FromQuery] Guid companyId,
+        [FromQuery] string dateFrom,
+        [FromQuery] string dateTo)
+    {
+        try
+        {
+            // Validate date format
+            if (!DateTime.TryParseExact(dateFrom, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out var startDate))
+            {
+                return BadRequest(new { error = "Invalid dateFrom format. Expected YYYY-MM-DD" });
+            }
+
+            if (!DateTime.TryParseExact(dateTo, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out var endDate))
+            {
+                return BadRequest(new { error = "Invalid dateTo format. Expected YYYY-MM-DD" });
+            }
+
+            if (startDate > endDate)
+            {
+                return BadRequest(new { error = "dateFrom must be before or equal to dateTo" });
+            }
+
+            _logger.LogInformation($"Retrieving violations for company {companyId} from {startDate:yyyy-MM-dd} to {endDate:yyyy-MM-dd}");
+
+            // Query violations from database
+            var violations = await _context.Violations
+                .Where(v => v.CompanyId == companyId &&
+                           v.IsActive &&
+                           ((v.IssueDate.HasValue && v.IssueDate.Value.Date >= startDate.Date && v.IssueDate.Value.Date <= endDate.Date) ||
+                            (v.StartDate.HasValue && v.StartDate.Value.Date >= startDate.Date && v.StartDate.Value.Date <= endDate.Date) ||
+                            (!v.IssueDate.HasValue && !v.StartDate.HasValue && v.CreatedAt.Date >= startDate.Date && v.CreatedAt.Date <= endDate.Date)))
+                .OrderByDescending(v => v.IssueDate ?? v.StartDate ?? v.CreatedAt)
+                .ToListAsync();
+
+            _logger.LogInformation($"Found {violations.Count} violations for company {companyId}");
+
+            return Ok(new
+            {
+                companyId = companyId,
+                dateFrom = dateFrom,
+                dateTo = dateTo,
+                violations = violations.Select(v => new
+                {
+                    id = v.Id,
+                    citationNumber = v.CitationNumber,
+                    noticeNumber = v.NoticeNumber,
+                    provider = v.Provider,
+                    agency = v.Agency,
+                    address = v.Address,
+                    tag = v.Tag,
+                    state = v.State,
+                    issueDate = v.IssueDate,
+                    startDate = v.StartDate,
+                    endDate = v.EndDate,
+                    amount = v.Amount,
+                    currency = v.Currency,
+                    paymentStatus = v.PaymentStatus,
+                    fineType = v.FineType,
+                    note = v.Note,
+                    link = v.Link,
+                    isActive = v.IsActive,
+                    createdAt = v.CreatedAt,
+                    updatedAt = v.UpdatedAt
+                }),
+                totalCount = violations.Count
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, $"Error getting violations for company {companyId}");
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Search for violations using finders (POST endpoint)
+    /// POST /api/Violations
+    /// </summary>
     [HttpPost]
     public async Task<IActionResult> GetViolations([FromBody] ViolationsRequest request)
     {

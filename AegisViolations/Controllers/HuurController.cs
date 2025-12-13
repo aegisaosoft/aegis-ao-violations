@@ -212,9 +212,33 @@ public class HuurController : ControllerBase
             var bearerToken = await _authService.GetBearerTokenAsync();
 
             // Call Huur API to get external vehicles
-            var vehiclesResponse = await _huurApiClient.GetExternalVehiclesAsync(bearerToken);
+            GetExternalVehiclesResponse? vehiclesResponse = null;
+            try
+            {
+                vehiclesResponse = await _huurApiClient.GetExternalVehiclesAsync(bearerToken);
+            }
+            catch (HttpRequestException ex)
+            {
+                _logger.LogError(ex, "HTTP error calling GetExternalVehiclesAsync. Status: {StatusCode}", 
+                    ex.Data.Contains("StatusCode") ? ex.Data["StatusCode"] : "Unknown");
+                return StatusCode(500, new 
+                { 
+                    error = "Failed to retrieve vehicles from Huur API",
+                    details = ex.Message,
+                    innerException = ex.InnerException?.Message
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error calling GetExternalVehiclesAsync");
+                return StatusCode(500, new 
+                { 
+                    error = "Failed to retrieve vehicles from Huur API",
+                    details = ex.Message
+                });
+            }
 
-            if (vehiclesResponse.Reason != 0)
+            if (vehiclesResponse == null || vehiclesResponse.Reason != 0)
             {
                 _logger.LogError("Failed to get vehicles from Huur API. Reason: {Reason}, Message: {Message}", 
                     vehiclesResponse.Reason, vehiclesResponse.Message);
