@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
@@ -36,12 +36,12 @@
     <Copy SourceFiles="@(ConfigCopyFiles)" DestinationFolder="$(LoaderOutputDir)" SkipUnchangedFiles="true" />
   </Target>
 
-  <Target Name="CopyToAegisViolationsFinders" AfterTargets="Build">
+  <Target Name="CopyToAegisViolationsFinders" AfterTargets="Build;Publish">
     <PropertyGroup>
       <FindersDir>$(MSBuildProjectDirectory)\..\AegisViolations\Finders\</FindersDir>
     </PropertyGroup>
     <MakeDir Directories="$(FindersDir)" />
-    <Copy SourceFiles="$(TargetDir)$(TargetFileName)" DestinationFolder="$(FindersDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(TargetDir)$(TargetFileName)" DestinationFolder="$(FindersDir)" SkipUnchangedFiles="true" Condition="Exists('$(TargetDir)$(TargetFileName)')" />
   </Target>
 
 </Project>

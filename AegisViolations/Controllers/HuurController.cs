@@ -253,7 +253,18 @@ public class HuurController : ControllerBase
                 });
             }
 
-            if (vehiclesResponse == null || vehiclesResponse.Reason != 0)
+            if (vehiclesResponse == null)
+            {
+                _logger.LogError("Failed to get vehicles from Huur API. Response is null");
+                return BadRequest(new 
+                { 
+                    error = "Failed to get vehicles from Huur API",
+                    reason = 0,
+                    message = "Response is null"
+                });
+            }
+
+            if (vehiclesResponse.Reason != 0)
             {
                 _logger.LogError("Failed to get vehicles from Huur API. Reason: {Reason}, Message: {Message}", 
                     vehiclesResponse.Reason, vehiclesResponse.Message);

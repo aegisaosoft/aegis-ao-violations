@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
@@ -16,5 +16,13 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="9.0.0" />
   </ItemGroup>
+
+  <Target Name="CopyToAegisViolationsFinders" AfterTargets="Build;Publish">
+    <PropertyGroup>
+      <FindersDir>$(MSBuildProjectDirectory)\..\AegisViolations\Finders\</FindersDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(FindersDir)" />
+    <Copy SourceFiles="$(TargetDir)$(TargetFileName)" DestinationFolder="$(FindersDir)" SkipUnchangedFiles="true" Condition="Exists('$(TargetDir)$(TargetFileName)')" />
+  </Target>
 
 </Project>
