@@ -26,6 +26,7 @@ public interface IProgressTrackingService
     ProgressInfo? GetProgressByCompanyId(Guid companyId);
     void RemoveProgress(string requestId);
     bool IsCompanyProcessing(Guid companyId);
+    void MarkTaskCompleted(string requestId);
 }
 
 public class ProgressTrackingService : IProgressTrackingService
@@ -86,7 +87,8 @@ public class ProgressTrackingService : IProgressTrackingService
                 RequestId = requestId,
                 Progress = progress,
                 Status = status ?? "Processing",
-                StartedAt = DateTime.UtcNow
+                StartedAt = DateTime.UtcNow,
+                IsTaskRunning = true
             },
             (key, existing) =>
             {
@@ -96,10 +98,30 @@ public class ProgressTrackingService : IProgressTrackingService
                     existing.Status = status;
                 }
                 existing.LastUpdated = DateTime.UtcNow;
+                // If progress reaches 100%, mark task as not running (completed)
+                if (progress >= 100 && existing.IsTaskRunning)
+                {
+                    existing.IsTaskRunning = false;
+                    existing.CompletedAt = DateTime.UtcNow;
+                }
                 return existing;
             });
 
         _logger.LogDebug("Updated progress for {RequestId}: {Progress}% - {Status}", requestId, progress, status ?? "Processing");
+    }
+
+    public void MarkTaskCompleted(string requestId)
+    {
+        if (string.IsNullOrEmpty(requestId))
+            return;
+
+        if (_progressStore.TryGetValue(requestId, out var progress))
+        {
+            progress.IsTaskRunning = false;
+            progress.CompletedAt = DateTime.UtcNow;
+            progress.LastUpdated = DateTime.UtcNow;
+            _logger.LogDebug("Marked task as completed for {RequestId}", requestId);
+        }
     }
 
     public ProgressInfo? GetProgress(string requestId)
@@ -135,8 +157,36 @@ public class ProgressTrackingService : IProgressTrackingService
             return false;
         }
 
+        // If task is still running, it's processing
+        if (progress.IsTaskRunning)
+        {
+            return true;
+        }
+
+        // If task completed recently (within last 30 seconds), consider it still processing to prevent rapid restarts
+        // This prevents infinite loops when tasks fail and restart immediately
+        if (progress.CompletedAt.HasValue)
+        {
+            var timeSinceCompletion = DateTime.UtcNow - progress.CompletedAt.Value;
+            // If there was an error, wait longer (60 seconds) before allowing restart
+            var cooldownPeriod = !string.IsNullOrEmpty(progress.Error) ? 60 : 30;
+            
+            if (timeSinceCompletion.TotalSeconds < cooldownPeriod)
+            {
+                _logger.LogDebug("Task completed recently ({Seconds}s ago) for company {CompanyId}, preventing rapid restart. Cooldown: {Cooldown}s", 
+                    timeSinceCompletion.TotalSeconds, companyId, cooldownPeriod);
+                return true;
+            }
+        }
+
         // Check if process is still active (not completed or error)
-        return progress.Progress < 100 && string.IsNullOrEmpty(progress.Error);
+        // If there's an error but task is still marked as running, it's processing
+        if (progress.Progress < 100 && progress.IsTaskRunning)
+        {
+            return true;
+        }
+
+        return false;
     }
 
     public void RemoveProgress(string requestId)
@@ -164,6 +214,8 @@ public class ProgressInfo
     public string Status { get; set; } = "Processing";
     public DateTime StartedAt { get; set; }
     public DateTime? LastUpdated { get; set; }
+    public DateTime? CompletedAt { get; set; }
     public string? Error { get; set; }
+    public bool IsTaskRunning { get; set; } = true;
 }
 

@@ -51,10 +51,21 @@ public class ViolationsController : ControllerBase
     [HttpGet("progress/{requestId}")]
     public IActionResult GetProgress([FromRoute] string requestId)
     {
+        if (string.IsNullOrWhiteSpace(requestId))
+        {
+            return BadRequest(new { error = "RequestId is required" });
+        }
+
         var progress = _progressTracking.GetProgress(requestId);
         if (progress == null)
         {
-            return NotFound(new { error = "Progress tracker not found for the given request ID" });
+            _logger.LogWarning("Progress tracker not found for requestId: {RequestId}", requestId);
+            return NotFound(new 
+            { 
+                error = "Progress tracker not found for the given request ID",
+                requestId = requestId,
+                suggestion = "If you have the companyId, try using GET /api/Violations/progress/company/{companyId} or GET /api/Violations/requestId/{companyId} instead"
+            });
         }
 
         return Ok(progress);
@@ -566,6 +577,7 @@ public class ViolationsController : ControllerBase
         _logger.LogInformation($"Starting violation collection for company {companyId} from {startDate:yyyy-MM-dd} to {endDate:yyyy-MM-dd} in states: {string.Join(", ", statesToSearch)} with {findersCount} finders");
 
         // Start background task for violation collection
+        // Use Task.Run with ContinueWith to ensure proper error handling and prevent infinite loops
         _ = Task.Run(async () =>
         {
             // Create a scope for the background task to access scoped services
@@ -573,17 +585,35 @@ public class ViolationsController : ControllerBase
             var context = scope.ServiceProvider.GetRequiredService<ViolationsDbContext>();
             var logger = scope.ServiceProvider.GetRequiredService<ILogger<ViolationsController>>();
             
+            logger.LogInformation($"Background task started for company {companyId}, requestId: {requestId}");
+            
             try
             {
                 await CollectViolationsForCompanyAsync(companyId, requestId, startDate, endDate, statesToSearch, relevantFinders, context, logger);
+                logger.LogInformation($"Background task completed successfully for company {companyId}, requestId: {requestId}");
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, $"Background violation collection failed for company {companyId}, requestId: {requestId}");
+                logger.LogError(ex, $"Background violation collection failed for company {companyId}, requestId: {requestId}. Error: {ex.Message}");
                 _progressTracking.UpdateProgress(requestId, 0, $"Error: {ex.Message}");
-                _progressTracking.RemoveProgress(requestId);
+                _progressTracking.MarkTaskCompleted(requestId);
+                // Don't remove progress immediately - keep it for a short time to prevent rapid retries
+                // The progress will be cleaned up after a timeout
+                logger.LogWarning($"Task failed for company {companyId}, requestId: {requestId}. Progress tracker kept to prevent rapid retries.");
             }
-        });
+            finally
+            {
+                // Ensure task is marked as not running
+                _progressTracking.MarkTaskCompleted(requestId);
+                logger.LogInformation($"Background task finished (success or error) for company {companyId}, requestId: {requestId}");
+            }
+        }).ContinueWith(task =>
+        {
+            if (task.IsFaulted)
+            {
+                _logger.LogError(task.Exception?.GetBaseException(), $"Unhandled exception in background task for company {companyId}, requestId: {requestId}");
+            }
+        }, TaskContinuationOptions.OnlyOnFaulted);
 
         // Return immediately with requestId, companyId, and finders count
         return Ok(new
@@ -867,19 +897,27 @@ public class ViolationsController : ControllerBase
                 // Don't fail the request if tracking fails
             }
 
-            _progressTracking.UpdateProgress(requestId, 100, "Completed");
-
             logger.LogInformation($"Successfully completed violation collection for company {companyId}. Processed {vehicles.Count} vehicles. Found {violationsList.Count} violations, saved {savedCount} new, updated {updatedCount} existing.");
+
+            // Set progress to 100% only after all work is truly complete
+            _progressTracking.UpdateProgress(requestId, 100, $"Completed: Processed {vehicles.Count} vehicles, found {violationsList.Count} violations, saved {savedCount} new, updated {updatedCount} existing");
+
+            // Mark the task as completed (no longer running)
+            _progressTracking.MarkTaskCompleted(requestId);
+
+            logger.LogInformation($"Task marked as completed for requestId: {requestId}, companyId: {companyId}");
 
             // Note: We keep the progress tracker for a short time to allow clients to check final status
             // It will be cleaned up automatically after a timeout or manually via cleanup endpoint
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, $"Error collecting violations for company {companyId}");
+            logger.LogError(ex, $"Error collecting violations for company {companyId}, requestId: {requestId}. Stack trace: {ex.StackTrace}");
             _progressTracking.UpdateProgress(requestId, 0, $"Error: {ex.Message}");
-            // Remove progress tracker on error so company can retry
-            _progressTracking.RemoveProgress(requestId);
+            _progressTracking.MarkTaskCompleted(requestId);
+            // Don't remove progress immediately - keep it for a short time to prevent rapid retries/loops
+            // The progress will be cleaned up after a timeout or manually
+            logger.LogWarning($"Error occurred for company {companyId}, requestId: {requestId}. Progress tracker kept to prevent rapid retries.");
         }
     }
 }
