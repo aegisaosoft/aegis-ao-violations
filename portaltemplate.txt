@@ -17,7 +17,6 @@ using AegisViolationsAPI;
 using AegisViolationsAPI.Abstr;
 using AegisViolationsAPI.Helpers;
 
-
 {
     public class <Domain>Finder : AHttpFinder, IAegisAPIFinder
     {
