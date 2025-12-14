@@ -11,7 +11,7 @@
     <ProjectReference Include="..\AegisViolationsAPI\AegisViolationsAPI.csproj" />
   </ItemGroup>
 
-  <Target Name="CopyToLoaders" AfterTargets="Build">
+  <Target Name="CopyToLoaders" AfterTargets="Build;Publish">
       <Copy SourceFiles="$(TargetDir)$(TargetFileName)" DestinationFolder="..\AegisViolationsAPILoader\Loaders\" SkipUnchangedFiles="true" />
       <Copy SourceFiles="$(TargetDir)$(TargetFileName)" DestinationFolder="..\AegisFinderTest\Loaders\" SkipUnchangedFiles="true" />
       <Copy SourceFiles="$(TargetDir)$(TargetFileName)" DestinationFolder="..\AegisViolationsService\Loaders\" SkipUnchangedFiles="true" />

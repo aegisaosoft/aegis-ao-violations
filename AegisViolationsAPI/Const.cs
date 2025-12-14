@@ -22,6 +22,7 @@ namespace AegisViolationsAPI
         public static int P_NEW = 0;
         public static int P_PAID = 1;
         public static int P_DISPUTED = 2;
+        public static int P_PARTIAL = 4;
         public static int FT_PARKING = 1;
     }
 }

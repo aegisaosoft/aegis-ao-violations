@@ -23,8 +23,8 @@ namespace PAAegisViolations.Finders
     public class StateCollegeFinder : AHttpFinder, IAegisAPIFinder
     {
         protected static string _url = "https://statecollege.t2hosted.com";
-        protected PortalHelper helper = new PortalHelper(_url, "State College");
-        public string Name => "State College";
+        protected PortalHelper helper = new PortalHelper(_url, "Borough of State College");
+        public string Name => "Borough of State College";
         public string State => "PA";
         public string Link => "https://statecollege.t2hosted.com";
 
