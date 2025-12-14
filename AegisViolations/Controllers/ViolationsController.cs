@@ -61,6 +61,26 @@ public class ViolationsController : ControllerBase
     }
 
     /// <summary>
+    /// Get requestId for a company's active violation collection
+    /// GET /api/Violations/requestId/{companyId}
+    /// </summary>
+    [HttpGet("requestId/{companyId}")]
+    public IActionResult GetRequestIdByCompany([FromRoute] Guid companyId)
+    {
+        var progress = _progressTracking.GetProgressByCompanyId(companyId);
+        if (progress == null)
+        {
+            return NotFound(new { error = "No active violation collection found for this company", companyId });
+        }
+
+        return Ok(new
+        {
+            requestId = progress.RequestId,
+            companyId = companyId
+        });
+    }
+
+    /// <summary>
     /// Get progress status for a company's violation collection
     /// GET /api/Violations/progress/company/{companyId}
     /// </summary>
