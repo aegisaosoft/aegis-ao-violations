@@ -34,12 +34,14 @@ public class ViolationsController : ControllerBase
     private readonly ILogger<ViolationsController> _logger;
     private readonly ViolationsDbContext _context;
     private readonly IProgressTrackingService _progressTracking;
+    private readonly IServiceScopeFactory _serviceScopeFactory;
 
-    public ViolationsController(ILogger<ViolationsController> logger, ViolationsDbContext context, IProgressTrackingService progressTracking)
+    public ViolationsController(ILogger<ViolationsController> logger, ViolationsDbContext context, IProgressTrackingService progressTracking, IServiceScopeFactory serviceScopeFactory)
     {
         _logger = logger;
         _context = context;
         _progressTracking = progressTracking;
+        _serviceScopeFactory = serviceScopeFactory;
     }
 
     /// <summary>
@@ -53,6 +55,22 @@ public class ViolationsController : ControllerBase
         if (progress == null)
         {
             return NotFound(new { error = "Progress tracker not found for the given request ID" });
+        }
+
+        return Ok(progress);
+    }
+
+    /// <summary>
+    /// Get progress status for a company's violation collection
+    /// GET /api/Violations/progress/company/{companyId}
+    /// </summary>
+    [HttpGet("progress/company/{companyId}")]
+    public IActionResult GetProgressByCompany([FromRoute] Guid companyId)
+    {
+        var progress = _progressTracking.GetProgressByCompanyId(companyId);
+        if (progress == null)
+        {
+            return NotFound(new { error = "No active violation collection found for this company", companyId });
         }
 
         return Ok(progress);
@@ -441,73 +459,145 @@ public class ViolationsController : ControllerBase
     /// <summary>
     /// Search and save violations for all vehicles of a company within a date range
     /// POST /api/Violations/{company_id}
+    /// Returns immediately with requestId, companyId, and finders count, then continues collection in background
     /// </summary>
     [HttpPost("{companyId}")]
-    public async Task<IActionResult> GetAndSaveCompanyViolations(
+    public IActionResult GetAndSaveCompanyViolations(
         [FromRoute] Guid companyId,
         [FromBody] CompanyViolationsRequest request)
     {
-        // Create progress tracker
-        var requestId = _progressTracking.CreateProgressTracker();
-
-        try
+        // Check if there's already a process running for this company
+        if (_progressTracking.IsCompanyProcessing(companyId))
         {
-            _progressTracking.UpdateProgress(requestId, 0, "Validating request");
+            var existingProgress = _progressTracking.GetProgressByCompanyId(companyId);
+            _logger.LogWarning($"Violation collection already in progress for company {companyId}. RequestId: {existingProgress?.RequestId}, Progress: {existingProgress?.Progress}%");
+            return Conflict(new 
+            { 
+                error = "Violation collection is already in progress for this company",
+                companyId = companyId,
+                requestId = existingProgress?.RequestId,
+                progress = existingProgress?.Progress,
+                status = existingProgress?.Status,
+                startedAt = existingProgress?.StartedAt
+            });
+        }
 
-            if (request == null)
-            {
-                _progressTracking.UpdateProgress(requestId, 0, "Error: Request body is required");
-                return BadRequest(new { error = "Request body is required", requestId });
-            }
+        // Validate request
+        if (request == null)
+        {
+            return BadRequest(new { error = "Request body is required" });
+        }
 
-            // Validate date format
-            if (!DateTime.TryParseExact(request.StartDate, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out var startDate))
-            {
-                _progressTracking.UpdateProgress(requestId, 0, "Error: Invalid StartDate format");
-                return BadRequest(new { error = "Invalid StartDate format. Expected YYYY-MM-DD", requestId });
-            }
+        // Validate date format
+        if (!DateTime.TryParseExact(request.StartDate, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out var startDate))
+        {
+            return BadRequest(new { error = "Invalid StartDate format. Expected YYYY-MM-DD" });
+        }
 
-            if (!DateTime.TryParseExact(request.EndDate, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out var endDate))
-            {
-                _progressTracking.UpdateProgress(requestId, 0, "Error: Invalid EndDate format");
-                return BadRequest(new { error = "Invalid EndDate format. Expected YYYY-MM-DD", requestId });
-            }
+        if (!DateTime.TryParseExact(request.EndDate, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out var endDate))
+        {
+            return BadRequest(new { error = "Invalid EndDate format. Expected YYYY-MM-DD" });
+        }
 
-            if (startDate > endDate)
-            {
-                _progressTracking.UpdateProgress(requestId, 0, "Error: StartDate must be before or equal to EndDate");
-                return BadRequest(new { error = "StartDate must be before or equal to EndDate", requestId });
-            }
+        if (startDate > endDate)
+        {
+            return BadRequest(new { error = "StartDate must be before or equal to EndDate" });
+        }
 
-            // Prepare states to search
-            var statesToSearch = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (request.States != null && request.States.Count > 0)
+        // Prepare states to search
+        var statesToSearch = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (request.States != null && request.States.Count > 0)
+        {
+            foreach (var state in request.States)
             {
-                foreach (var state in request.States)
+                if (!string.IsNullOrWhiteSpace(state))
                 {
-                    if (!string.IsNullOrWhiteSpace(state))
-                    {
-                        statesToSearch.Add(state.Trim().ToUpperInvariant());
-                    }
+                    statesToSearch.Add(state.Trim().ToUpperInvariant());
                 }
             }
-            
-            if (statesToSearch.Count == 0)
+        }
+        
+        if (statesToSearch.Count == 0)
+        {
+            return BadRequest(new { error = "At least one state must be specified" });
+        }
+
+        // Create progress tracker with company ID
+        var requestId = _progressTracking.CreateProgressTracker(companyId);
+        _progressTracking.UpdateProgress(requestId, 0, "Initializing");
+
+        // Load finders to get count
+        var allFinders = LoadFindersFromDlls();
+        var relevantFinders = allFinders
+            .Where(f =>
             {
-                _progressTracking.UpdateProgress(requestId, 0, "Error: At least one state must be specified");
-                return BadRequest(new { error = "At least one state must be specified", requestId });
+                var stateProperty = f.GetType().GetProperty("State", BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy);
+                if (stateProperty != null && stateProperty.CanRead)
+                {
+                    var finderState = stateProperty.GetValue(f)?.ToString() ?? string.Empty;
+                    return statesToSearch.Contains(finderState, StringComparer.OrdinalIgnoreCase);
+                }
+                return false;
+            })
+            .ToList();
+
+        var findersCount = relevantFinders.Count;
+
+        _logger.LogInformation($"Starting violation collection for company {companyId} from {startDate:yyyy-MM-dd} to {endDate:yyyy-MM-dd} in states: {string.Join(", ", statesToSearch)} with {findersCount} finders");
+
+        // Start background task for violation collection
+        _ = Task.Run(async () =>
+        {
+            // Create a scope for the background task to access scoped services
+            using var scope = _serviceScopeFactory.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<ViolationsDbContext>();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<ViolationsController>>();
+            
+            try
+            {
+                await CollectViolationsForCompanyAsync(companyId, requestId, startDate, endDate, statesToSearch, relevantFinders, context, logger);
             }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, $"Background violation collection failed for company {companyId}, requestId: {requestId}");
+                _progressTracking.UpdateProgress(requestId, 0, $"Error: {ex.Message}");
+                _progressTracking.RemoveProgress(requestId);
+            }
+        });
 
-            _logger.LogInformation($"Searching violations for company {companyId} from {startDate:yyyy-MM-dd} to {endDate:yyyy-MM-dd} in states: {string.Join(", ", statesToSearch)}");
+        // Return immediately with requestId, companyId, and finders count
+        return Ok(new
+        {
+            requestId = requestId,
+            companyId = companyId,
+            findersCount = findersCount,
+            message = "Violation collection started in background. Use the requestId to check progress."
+        });
+    }
 
+    /// <summary>
+    /// Background method to collect violations for a company
+    /// </summary>
+    private async Task CollectViolationsForCompanyAsync(
+        Guid companyId,
+        string requestId,
+        DateTime startDate,
+        DateTime endDate,
+        HashSet<string> statesToSearch,
+        List<IAegisAPIFinder> relevantFinders,
+        ViolationsDbContext context,
+        ILogger<ViolationsController> logger)
+    {
+        try
+        {
             _progressTracking.UpdateProgress(requestId, 5, "Loading vehicles from database");
 
             // Get all vehicles for the company from the database using raw SQL
             var vehicles = new List<Vehicle>();
             try
             {
-                await _context.Database.OpenConnectionAsync();
-                using var command = _context.Database.GetDbConnection().CreateCommand();
+                await context.Database.OpenConnectionAsync();
+                using var command = context.Database.GetDbConnection().CreateCommand();
                 command.CommandText = "SELECT id, company_id, license_plate, state FROM vehicles WHERE company_id = @companyId AND license_plate IS NOT NULL AND license_plate != ''";
                 var parameter = command.CreateParameter();
                 parameter.ParameterName = "@companyId";
@@ -528,49 +618,19 @@ public class ViolationsController : ControllerBase
             }
             finally
             {
-                await _context.Database.CloseConnectionAsync();
+                await context.Database.CloseConnectionAsync();
             }
 
             if (vehicles.Count == 0)
             {
-                _logger.LogWarning($"No vehicles found for company {companyId}");
+                logger.LogWarning($"No vehicles found for company {companyId}");
                 _progressTracking.UpdateProgress(requestId, 100, "Completed: No vehicles found");
-                return Ok(new CompanyViolationsResponse
-                {
-                    CompanyId = companyId,
-                    VehiclesProcessed = 0,
-                    ViolationsFound = 0,
-                    ViolationsSaved = 0,
-                    ViolationsUpdated = 0,
-                    Message = "No vehicles found for this company",
-                    RequestId = requestId
-                });
+                return;
             }
 
-            _logger.LogInformation($"Found {vehicles.Count} vehicles for company {companyId}");
+            logger.LogInformation($"Found {vehicles.Count} vehicles for company {companyId}");
 
-            _progressTracking.UpdateProgress(requestId, 10, "Loading finders");
-
-            // Load all finders
-            var allFinders = LoadFindersFromDlls();
-
-            // Filter finders by states
-            var relevantFinders = allFinders
-                .Where(f =>
-                {
-                    var stateProperty = f.GetType().GetProperty("State", BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy);
-                    if (stateProperty != null && stateProperty.CanRead)
-                    {
-                        var finderState = stateProperty.GetValue(f)?.ToString() ?? string.Empty;
-                        return statesToSearch.Contains(finderState, StringComparer.OrdinalIgnoreCase);
-                    }
-                    return false;
-                })
-                .ToList();
-
-            _logger.LogInformation($"Found {relevantFinders.Count} relevant finders for states: {string.Join(", ", statesToSearch)}");
-
-            _progressTracking.UpdateProgress(requestId, 15, "Starting violation search");
+            _progressTracking.UpdateProgress(requestId, 10, "Starting violation search");
 
             // Use thread-safe collections
             var allViolations = new ConcurrentBag<ParkingViolation>();
@@ -602,7 +662,7 @@ public class ViolationsController : ControllerBase
                         })
                         .ToList();
 
-                    _logger.LogInformation($"Searching for plate {vehicle.LicensePlate} (state: {vehicleState}) using {vehicleFinders.Count} finders");
+                    logger.LogInformation($"Searching for plate {vehicle.LicensePlate} (state: {vehicleState}) using {vehicleFinders.Count} finders");
 
                     // Search with all finders in parallel for this vehicle
                     var finderTasks = vehicleFinders.Select(async finder =>
@@ -637,20 +697,20 @@ public class ViolationsController : ControllerBase
                                         allViolations.Add(violation);
                                     }
                                 }
-                                _logger.LogInformation($"Found {violations.Count} violations for {vehicle.LicensePlate} using {finder.Name}");
+                                logger.LogInformation($"Found {violations.Count} violations for {vehicle.LicensePlate} using {finder.Name}");
                             }
                         }
                         catch (Exception ex)
                         {
-                            _logger.LogWarning(ex, $"Error searching with finder {finder.Name} for plate {vehicle.LicensePlate}");
+                            logger.LogWarning(ex, $"Error searching with finder {finder.Name} for plate {vehicle.LicensePlate}");
                         }
                     });
 
                     await Task.WhenAll(finderTasks);
 
-                    // Update progress after each vehicle is processed (15% to 70%)
+                    // Update progress after each vehicle is processed (10% to 70%)
                     var newProcessed = Interlocked.Increment(ref processedVehicles);
-                    var progress = 15 + (int)((double)newProcessed / totalVehicles * 55);
+                    var progress = 10 + (int)((double)newProcessed / totalVehicles * 60);
                     _progressTracking.UpdateProgress(requestId, progress, $"Processed {newProcessed}/{totalVehicles} vehicles");
                 });
 
@@ -699,13 +759,13 @@ public class ViolationsController : ControllerBase
                     Violation? existingViolation = null;
                     if (!string.IsNullOrWhiteSpace(violationEntity.NoticeNumber))
                     {
-                        existingViolation = await _context.Violations
+                        existingViolation = await context.Violations
                             .FirstOrDefaultAsync(v => v.CompanyId == companyId && 
                                                      v.NoticeNumber == violationEntity.NoticeNumber);
                     }
                     else if (!string.IsNullOrWhiteSpace(violationEntity.CitationNumber))
                     {
-                        existingViolation = await _context.Violations
+                        existingViolation = await context.Violations
                             .FirstOrDefaultAsync(v => v.CompanyId == companyId && 
                                                      v.CitationNumber == violationEntity.CitationNumber);
                     }
@@ -732,13 +792,13 @@ public class ViolationsController : ControllerBase
                         existingViolation.IsActive = violationEntity.IsActive;
                         existingViolation.UpdatedAt = DateTime.UtcNow;
 
-                        _context.Violations.Update(existingViolation);
+                        context.Violations.Update(existingViolation);
                         Interlocked.Increment(ref updatedCount);
                     }
                     else
                     {
                         // Add new violation
-                        _context.Violations.Add(violationEntity);
+                        context.Violations.Add(violationEntity);
                         Interlocked.Increment(ref savedCount);
                     }
 
@@ -752,14 +812,14 @@ public class ViolationsController : ControllerBase
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, $"Error saving violation for company {companyId}");
+                    logger.LogError(ex, $"Error saving violation for company {companyId}");
                 }
             }
 
             // Save all changes to database
-            await _context.SaveChangesAsync();
+            await context.SaveChangesAsync();
 
-            _logger.LogInformation($"Saved {savedCount} new violations and updated {updatedCount} existing violations for company {companyId}");
+            logger.LogInformation($"Saved {savedCount} new violations and updated {updatedCount} existing violations for company {companyId}");
 
             _progressTracking.UpdateProgress(requestId, 95, "Saving request record");
 
@@ -776,35 +836,30 @@ public class ViolationsController : ControllerBase
                     FindersCount = relevantFinders.Count,
                     RequestDateTime = DateTime.UtcNow,
                     ViolationsFound = violationsList.Count,
-                    Requestor = GetRequestor()
+                    Requestor = "Background Task" // Simplified since we don't have HttpContext in background task
                 };
-                _context.ViolationsRequests.Add(requestRecord);
-                await _context.SaveChangesAsync();
+                context.ViolationsRequests.Add(requestRecord);
+                await context.SaveChangesAsync();
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to save violation request record");
+                logger.LogWarning(ex, "Failed to save violation request record");
                 // Don't fail the request if tracking fails
             }
 
             _progressTracking.UpdateProgress(requestId, 100, "Completed");
 
-            return Ok(new CompanyViolationsResponse
-            {
-                CompanyId = companyId,
-                VehiclesProcessed = vehicles.Count,
-                ViolationsFound = violationsList.Count,
-                ViolationsSaved = savedCount,
-                ViolationsUpdated = updatedCount,
-                Message = $"Successfully processed {vehicles.Count} vehicles. Found {violationsList.Count} violations, saved {savedCount} new, updated {updatedCount} existing.",
-                RequestId = requestId
-            });
+            logger.LogInformation($"Successfully completed violation collection for company {companyId}. Processed {vehicles.Count} vehicles. Found {violationsList.Count} violations, saved {savedCount} new, updated {updatedCount} existing.");
+
+            // Note: We keep the progress tracker for a short time to allow clients to check final status
+            // It will be cleaned up automatically after a timeout or manually via cleanup endpoint
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, $"Error getting and saving violations for company {companyId}");
+            logger.LogError(ex, $"Error collecting violations for company {companyId}");
             _progressTracking.UpdateProgress(requestId, 0, $"Error: {ex.Message}");
-            return StatusCode(500, new { error = ex.Message, requestId });
+            // Remove progress tracker on error so company can retry
+            _progressTracking.RemoveProgress(requestId);
         }
     }
 }

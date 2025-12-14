@@ -20,14 +20,18 @@ namespace AegisViolations.Services;
 public interface IProgressTrackingService
 {
     string CreateProgressTracker();
+    string CreateProgressTracker(Guid? companyId);
     void UpdateProgress(string requestId, int progress, string? status = null);
     ProgressInfo? GetProgress(string requestId);
+    ProgressInfo? GetProgressByCompanyId(Guid companyId);
     void RemoveProgress(string requestId);
+    bool IsCompanyProcessing(Guid companyId);
 }
 
 public class ProgressTrackingService : IProgressTrackingService
 {
     private readonly ConcurrentDictionary<string, ProgressInfo> _progressStore = new();
+    private readonly ConcurrentDictionary<Guid, string> _companyIdToRequestId = new();
     private readonly ILogger<ProgressTrackingService> _logger;
 
     public ProgressTrackingService(ILogger<ProgressTrackingService> logger)
@@ -37,15 +41,33 @@ public class ProgressTrackingService : IProgressTrackingService
 
     public string CreateProgressTracker()
     {
+        return CreateProgressTracker(null);
+    }
+
+    public string CreateProgressTracker(Guid? companyId)
+    {
         var requestId = Guid.NewGuid().ToString();
-        _progressStore.TryAdd(requestId, new ProgressInfo
+        var progressInfo = new ProgressInfo
         {
             RequestId = requestId,
+            CompanyId = companyId,
             Progress = 0,
             Status = "Initializing",
             StartedAt = DateTime.UtcNow
-        });
-        _logger.LogDebug("Created progress tracker: {RequestId}", requestId);
+        };
+        
+        _progressStore.TryAdd(requestId, progressInfo);
+        
+        if (companyId.HasValue)
+        {
+            _companyIdToRequestId.TryAdd(companyId.Value, requestId);
+            _logger.LogDebug("Created progress tracker: {RequestId} for company {CompanyId}", requestId, companyId);
+        }
+        else
+        {
+            _logger.LogDebug("Created progress tracker: {RequestId}", requestId);
+        }
+        
         return requestId;
     }
 
@@ -89,19 +111,55 @@ public class ProgressTrackingService : IProgressTrackingService
         return progressInfo;
     }
 
+    public ProgressInfo? GetProgressByCompanyId(Guid companyId)
+    {
+        if (_companyIdToRequestId.TryGetValue(companyId, out var requestId))
+        {
+            return GetProgress(requestId);
+        }
+        return null;
+    }
+
+    public bool IsCompanyProcessing(Guid companyId)
+    {
+        if (!_companyIdToRequestId.TryGetValue(companyId, out var requestId))
+        {
+            return false;
+        }
+
+        var progress = GetProgress(requestId);
+        if (progress == null)
+        {
+            // Clean up stale mapping
+            _companyIdToRequestId.TryRemove(companyId, out _);
+            return false;
+        }
+
+        // Check if process is still active (not completed or error)
+        return progress.Progress < 100 && string.IsNullOrEmpty(progress.Error);
+    }
+
     public void RemoveProgress(string requestId)
     {
         if (string.IsNullOrEmpty(requestId))
             return;
 
-        _progressStore.TryRemove(requestId, out _);
-        _logger.LogDebug("Removed progress tracker: {RequestId}", requestId);
+        if (_progressStore.TryRemove(requestId, out var progressInfo))
+        {
+            // Remove company ID mapping if exists
+            if (progressInfo.CompanyId.HasValue)
+            {
+                _companyIdToRequestId.TryRemove(progressInfo.CompanyId.Value, out _);
+            }
+            _logger.LogDebug("Removed progress tracker: {RequestId}", requestId);
+        }
     }
 }
 
 public class ProgressInfo
 {
     public string RequestId { get; set; } = string.Empty;
+    public Guid? CompanyId { get; set; }
     public int Progress { get; set; }
     public string Status { get; set; } = "Processing";
     public DateTime StartedAt { get; set; }
